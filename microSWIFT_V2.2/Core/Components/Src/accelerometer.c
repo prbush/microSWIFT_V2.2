@@ -12,6 +12,7 @@ Accelerometer *accel_self;
 // Private function prototypes; since not part of public interface, did not
 // include them in .h file
 uSWIFT_return_code_t _accel_self_test(accel_self_test_result_t *result);
+uSWIFT_return_code_t _accel_set_time(uint32_t timestamp);
 uSWIFT_return_code_t _accel_start_sampling(void);
 uSWIFT_return_code_t _accel_parse_waves(sbd_message_type_55 *accel_msg);
 uSWIFT_return_code_t _accel_uart_init(void);
@@ -25,6 +26,7 @@ void accelerometer_init(Accelerometer *accel, UART_HandleTypeDef *uart_handle,
   accel_self = accel;
 
   accel_self->self_test = _accel_self_test;
+  accel_self->set_time = _accel_set_time;
   accel_self->start_sampling = _accel_start_sampling;
   accel_self->parse_waves = _accel_parse_waves;
 
@@ -47,6 +49,20 @@ void _accel_power_on(void) {
 
 void _accel_power_off(void) {
   HAL_GPIO_WritePin(EXP_GPIO_1_GPIO_Port, EXP_GPIO_1_Pin, GPIO_PIN_RESET);
+}
+
+uSWIFT_return_code_t _accel_set_time(uint32_t timestamp) {
+  uint8_t set_time_command[6];
+  strcpy(set_time_command, "CK");
+  memcpy(&set_time_command[2], &timestamp, sizeof(uint32_t));
+
+  UINT ret;
+  ret = accel_self->uart_driver.write(
+      &accel_self->uart_driver, set_time_command, 6, ACCEL_MAX_UART_TX_TICKS);
+  if (UART_OK != ret) {
+    return uSWIFT_IO_ERROR;
+  }
+  return uSWIFT_SUCCESS;
 }
 
 uSWIFT_return_code_t _accel_start_sampling(void) {

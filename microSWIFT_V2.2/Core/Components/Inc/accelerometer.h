@@ -42,6 +42,7 @@ typedef struct Accelerometer {
   DMA_HandleTypeDef *rx_dma_handle;
 
   uSWIFT_return_code_t (*self_test)(accel_self_test_result_t *result);
+  uSWIFT_return_code_t (*set_time)(uint32_t timestamp);
   uSWIFT_return_code_t (*start_sampling)(void);
   uSWIFT_return_code_t (*parse_waves)(sbd_message_type_55 *accel_msg);
   uSWIFT_return_code_t (*uart_init)(void);

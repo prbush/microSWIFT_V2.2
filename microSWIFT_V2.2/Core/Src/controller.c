@@ -251,9 +251,6 @@ static bool _control_startup_procedure(void) {
     if ((current_flags | ACCELEROMETER_INIT_SUCCESS) == init_success_flags) {
       LOG("Accelerometer initialization failed; disabling accelerometer and "
           "continuing with startup");
-      // This ensures that we won't try to re-start the accel thread later,
-      // and that the iridium thread won't wait for it.
-      // controller_self->thread_status.accelerometer_complete = true;
       tx_return = TX_SUCCESS;
     } else {
       LOG("control startup_procedure failed; success_flags = %lu, "

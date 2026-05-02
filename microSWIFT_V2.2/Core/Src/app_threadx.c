@@ -2185,6 +2185,13 @@ static void accel_thread_entry(ULONG thread_input) {
     (void)tx_event_flags_set(&initialization_flags, ACCELEROMETER_INIT_SUCCESS,
                              TX_OR);
   }
+  // We can't set the time until GNSS time has initialized.
+  // TODO: Once I finish testing the implementation, move this to the
+  //   start of the sampling window and uncomment get_system_time()
+  // uint32_t timestamp = (uint32_t)get_system_time();
+  uint32_t timestamp = 1777829511;
+  accel.set_time(timestamp);
+  LOG("Attempted to set time to %lu", timestamp);
 
   tx_thread_sleep(10 * TX_TIMER_TICKS_PER_SECOND);
 
@@ -2208,8 +2215,9 @@ static void accel_thread_entry(ULONG thread_input) {
 
   tx_thread_sleep(TX_TIMER_TICKS_PER_SECOND); // Time for board to wake back up.
 
+  // This timestamp is used for filling in fields of the SBD55 messages
+  timestamp = (uint32_t)get_system_time();
   accel.start_sampling();
-  uint32_t timestamp = (uint32_t)get_system_time();
 
   LOG("Accelerometer sample window started.");
   sbd_message_type_55 accel_msg = {0};
