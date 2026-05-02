@@ -596,7 +596,7 @@ io_error:
   return return_code;
 }
 
-// NOTE: this ignores in input parameter, instead always putting data into the
+// NOTE: this ignores input parameter, instead always putting data into the
 // configuration_buffer.
 static uSWIFT_return_code_t __internal_receive_message(uint8_t *receive_buffer,
                                                        uint16_t receive_size) {
@@ -610,7 +610,10 @@ static uSWIFT_return_code_t __internal_receive_message(uint8_t *receive_buffer,
     goto io_error;
   }
 
-  // This is just to grab the echo response, this will be thrown away
+  // NOTE(LEL): The above write call waits for a semaphore signaling that the
+  // write command is finished.
+
+  // the below call fails, with the error "BUSY".
   int read_ret = iridium_self->uart_driver.read(
       &iridium_self->uart_driver, &(iridium_self->configuration_buffer[0]),
       SBDRT_ECHO_RESPONSE_SIZE + receive_size, IRIDIUM_MAX_UART_RX_TICKS_NO_TX);
@@ -712,6 +715,7 @@ static void __reset_uart(void) {
 static int32_t __uart_read_dma(void *driver_ptr, uint8_t *read_buf,
                                uint16_t size, uint32_t timeout_ticks) {
   generic_uart_driver *driver_handle = (generic_uart_driver *)driver_ptr;
+  LOG("__uart_read_dma requesting %u bytes", size);
 
   HAL_StatusTypeDef rx_result;
   if (iridium_self->receive_to_idle) {
@@ -726,6 +730,8 @@ static int32_t __uart_read_dma(void *driver_ptr, uint8_t *read_buf,
     rx_result =
         HAL_UART_Receive_DMA(driver_handle->uart_handle, read_buf, size);
     if (HAL_OK != rx_result) {
+      // NOTE(LEL): This is where trying to receive iridium configuration fails;
+      // we get rx_result=2, which indicates "busy".
       LOG("__uart_read_dma HAL_UART_Receive_DMA returned error %d",
           (int)rx_result);
       goto uart_error;
@@ -736,6 +742,8 @@ static int32_t __uart_read_dma(void *driver_ptr, uint8_t *read_buf,
     LOG("__uart_read_dma tx_semaphore_get returned error %d", (int)sema_result);
     goto uart_error;
   }
+
+  LOG("...uart_read_dma finished successfully. %s", read_buf);
 
   return UART_OK;
 
@@ -749,6 +757,7 @@ static int32_t __uart_write_dma(void *driver_ptr, uint8_t *write_buf,
                                 uint16_t size, uint32_t timeout_ticks) {
   generic_uart_driver *driver_handle = (generic_uart_driver *)driver_ptr;
 
+  LOG("__uart_write_dma sending %u bytes: %s", size, write_buf);
   if (HAL_UART_Transmit_DMA(driver_handle->uart_handle, write_buf, size) !=
       HAL_OK) {
     goto uart_error;
@@ -758,10 +767,13 @@ static int32_t __uart_write_dma(void *driver_ptr, uint8_t *write_buf,
     goto uart_error;
   }
 
+  LOG("...uart_write_dma sent successfully");
   return UART_OK;
 
 uart_error:
   HAL_UART_DMAStop(driver_handle->uart_handle);
   HAL_UART_Abort(driver_handle->uart_handle);
+  LOG("...uart_write_dma failed.");
+
   return UART_ERR;
 }
