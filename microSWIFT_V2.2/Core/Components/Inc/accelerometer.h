@@ -54,8 +54,6 @@ typedef struct Accelerometer {
 
 void accelerometer_init(Accelerometer *struct_ptr,
                         UART_HandleTypeDef *accel_uart_handle,
-                        DMA_HandleTypeDef *tx_dma_handle,
-                        DMA_HandleTypeDef *rx_dma_handle,
                         TX_SEMAPHORE *uart_sema);
 
 #endif // 1SRC_ACCELEROMETER_H_

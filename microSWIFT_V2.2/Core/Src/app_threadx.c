@@ -2155,8 +2155,6 @@ static void accel_thread_entry(ULONG thread_input) {
 
   Accelerometer accel = {0};
   accelerometer_init(&accel, device_handles.expansion_uart_handle,
-                     device_handles.expansion_uart_tx_dma_handle,
-                     device_handles.expansion_uart_rx_dma_handle,
                      &expansion_uart_sema);
 
   accel.power_on();

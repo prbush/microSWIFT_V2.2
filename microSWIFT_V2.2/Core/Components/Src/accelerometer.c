@@ -1,5 +1,5 @@
 /*
- * Acceperometer.c
+ * Accelerometer.c
  *
  *      Author: Laura
  */
@@ -20,12 +20,7 @@ uSWIFT_return_code_t _accel_uart_reset(void);
 static void _accel_power_on(void);
 static void _accel_power_off(void);
 
-// NB: I'm trying to avoid creating an accel_self, but I guess we might
-// wind up needing one if any of these functions need to be void-void.
-
 void accelerometer_init(Accelerometer *accel, UART_HandleTypeDef *uart_handle,
-                        DMA_HandleTypeDef *tx_dma_handle,
-                        DMA_HandleTypeDef *rx_dma_handle,
                         TX_SEMAPHORE *uart_sema) {
   accel_self = accel;
 
@@ -39,9 +34,6 @@ void accelerometer_init(Accelerometer *accel, UART_HandleTypeDef *uart_handle,
   accel_self->power_on = _accel_power_on;
   accel_self->power_off = _accel_power_off;
 
-  // the read/write functions
-  accel_self->tx_dma_handle = tx_dma_handle;
-  accel_self->rx_dma_handle = rx_dma_handle;
   // Final two args are: override_read_fn, override_write_fn
   // We do not (for now?) need to overwrite read/write.
   generic_uart_register_io_functions(&accel_self->uart_driver, uart_handle,
