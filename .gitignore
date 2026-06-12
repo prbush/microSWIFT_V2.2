@@ -9,6 +9,10 @@ microSWIFT_V2_PowerOnExpansion/**
 microSWIFT_V2_UART_Test/**
 nucleo-u5a5-adxl355z/**
 
+Debug/**
+Release/**
+Deployment/**
+
 # Prerequisites
 *.d
 
