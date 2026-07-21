@@ -37,22 +37,35 @@ typedef struct {
   bool valid;
 } Accelerometer_Message_Storage_Element_t;
 
-// NB: This max does not change based on which sensors are enabled; currently
-//     evaluates to ~16 messages (or several days of waves messages), so that
-//     limitation may not be particularly important.
-#define MAX_NUM_NON_WAVES_MSGS_STORED                                          \
-  (65536U / ((sizeof(Iridium_Message_Storage_Element_t) * 5U) +                \
-             sizeof(Turbidity_Message_Storage_Element_t) +                     \
-             sizeof(Light_Message_Storage_Element_t) +                         \
-             sizeof(Accelerometer_Message_Storage_Element_t) *                 \
-                 5U)) // Max possible based on 64K SRAM2 size
+// NB: We do not change memory allocation based on which sensors are enabled,
+//     so some of this may be unused.
+// We have 64KB available in .sram2 for persistent storage
 
-#define MAX_NUM_WAVES_MSGS_STORED (MAX_NUM_NON_WAVES_MSGS_STORED * 5U)
-#define MAX_NUM_ACCELEROMETER_MSGS_STORED (MAX_NUM_NON_WAVES_MSGS_STORED * 5U)
+// MAX_NUM_NON_WAVES_MSGS_STORED Originally set to 16, by assuming that
+// we'd store an equal number of waves and accel messages, and that
+// we'd store 5x more waves than light or turbidity
+//
+// I'd rather tune that manually, and have the numbers explicitly defined.
+//
+// sizeof(Iridium_Message_Storage_Element_t) = 340
+// sizeof(Accelerometer_Message_Storage_Element_t) = 344
+// sizeof(Turbidity_Message_Storage_Element_t) = 288  (fits 3 turbidity msgs)
+// sizeof(Light_Message_Storage_Element_t) = 337 (fits 6 turbidity msgs)
+// total bytes used must be <= 65535U
+// with 80x waves; 80x accel; 16x each non_waves, we're at 63.65 KB
+// (360 bytes free)
+#define MAX_NUM_WAVES_MSGS_STORED 80
+#define MAX_NUM_ACCELEROMETER_MSGS_STORED 80
+
+// At least for now, these are coupled (code uses aggregated SBD msgs
+// stored vs. total Turbidity/Light message elements stored in different
+// loops.
+#define MAX_NUM_NON_WAVES_MSGS_STORED 16
 #define MAX_NUM_TURBIDITY_MSGS_STORED                                          \
   (MAX_NUM_NON_WAVES_MSGS_STORED * TURBIDITY_MSGS_PER_SBD)
 #define MAX_NUM_LIGHT_MSGS_STORED                                              \
   (MAX_NUM_NON_WAVES_MSGS_STORED * LIGHT_MSGS_PER_SBD)
+
 typedef struct {
   Iridium_Message_Storage_Element_t msg_queue[MAX_NUM_WAVES_MSGS_STORED];
   uint32_t num_telemetry_msgs_enqueued;
