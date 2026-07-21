@@ -11,14 +11,12 @@
 #include "stdbool.h"
 #include "stdint.h"
 
-typedef struct
-{
-  uint8_t major_rev :3;
-  uint8_t minor_rev :5;
+typedef struct {
+  uint8_t major_rev : 3;
+  uint8_t minor_rev : 5;
 } microSWIFT_firmware_version_t;
 
-typedef struct __attribute__((packed)) microSWIFT_configuration
-{
+typedef struct __attribute__((packed)) microSWIFT_configuration {
   uint32_t tracking_number;
   uint32_t gnss_samples_per_window;
   uint32_t duty_cycle;
