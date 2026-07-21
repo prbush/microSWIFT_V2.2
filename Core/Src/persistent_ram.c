@@ -635,6 +635,12 @@ void persistent_ram_delete_message_element(telemetry_type_t msg_type,
   }
 }
 
+VOID persistent_ram_get_accel_priorities(float *priorities) {
+  for (int ii = 0; ii < MAX_NUM_ACCELEROMETER_MSGS_STORED; ii++) {
+    priorities[ii] = persistent_self.accel_storage.msg_queue[ii].priority;
+  }
+}
+
 static void _persistent_ram_clear(void) {
   // Clear everything out
   memset(&persistent_self, 0, sizeof(Persistent_Storage));

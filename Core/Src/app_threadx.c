@@ -48,6 +48,7 @@
 #include "string.h"
 #include "temp_sensor.h"
 #include "turbidity_sensor.h"
+#include <float.h>
 #include <math.h>
 
 #include "NEDWaves/test_data_includes.h"
@@ -236,6 +237,7 @@ static void accel_thread_entry(ULONG thread_input);
 // I didn't move it into accelerometer.c because it depends on
 // functions in gnss.h, and I didn't want to add that dependencyb.
 static void save_accel_sbd(sbd_message_type_55 *accel_msg, float priority);
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
 
 // clang-format off
 /* USER CODE END PFP */
@@ -2260,8 +2262,23 @@ static void accel_thread_entry(ULONG thread_input) {
     // TODO: For the continuous method, want to request data from accelerometer
     // card until top N spots in queue are true max across both
     // microcontrollers.
-    for (int ii = 0; ii < 3; ii++) {
-      ret = accel.next_spectra(&accel_msg, &priority);
+    float priorities[MAX_NUM_ACCELEROMETER_MSGS_STORED];
+    // Find the top N priorities
+    int nn = MIN(MAX_NUM_ACCELEROMETER_MSGS_STORED, 15);
+
+    // Figure out the threshold priority for requesting data from the
+    // accel queue. (We want to wind up with the top N priority spectra
+    // stored in the controller's queue, so don't ask for new data that
+    // wouldn't make the top N)
+
+    for (int ii = 0; ii < nn; ii++) {
+      // Get unsorted priorities from persistent ram.
+      persistent_ram_get_accel_priorities(priorities);
+      sort_top_n(priorities, MAX_NUM_ACCELEROMETER_MSGS_STORED, nn);
+      float threshold_priority = priorities[nn];
+      LOG("Requesting priorities greater than %0.06f", threshold_priority);
+
+      ret = accel.next_spectra(&accel_msg, &priority, threshold_priority);
       if (uSWIFT_SUCCESS != ret) {
         accel_error_out(&accel, ACCELEROMETER_SAMPLING_ERROR, this_thread,
                         "Acceleration-based waves returned with error code: %d",
@@ -2270,6 +2287,7 @@ static void accel_thread_entry(ULONG thread_input) {
       LOG("Received accel spectra #%d with priority %0.6f", ii, priority);
       if (priority < 0) {
         LOG("Returned priority < 0; no spectra available from accel board.");
+        break;
       } else {
         save_accel_sbd(&accel_msg, priority);
       }
@@ -2330,6 +2348,27 @@ void save_accel_sbd(sbd_message_type_55 *accel_msg, float priority) {
 
   persistent_ram_save_message(ACCELEROMETER_TELEMETRY, priority,
                               (uint8_t *)accel_msg);
+}
+
+// Stupid in-place sorting algorithm used to find the N-th highest priority
+// Only reasonable if len(priorities) >> N
+void sort_top_n(float *priorities, int array_len, int num) {
+  float tmp_max;
+  int tmp_max_idx;
+  for (int ii = 0; ii < num; ii++) {
+    tmp_max = -FLT_MAX;
+    tmp_max_idx = -1;
+    // find N-th highest priority, assuming higher ones have been sorted to
+    // front of array.
+    for (int jj = ii; jj < array_len; jj++) {
+      if (priorities[jj] > tmp_max) {
+        tmp_max = priorities[jj];
+        tmp_max_idx = jj;
+      }
+    }
+    priorities[tmp_max_idx] = priorities[ii];
+    priorities[ii] = tmp_max;
+  }
 }
 // clang-format off
 /* USER CODE END 1 */

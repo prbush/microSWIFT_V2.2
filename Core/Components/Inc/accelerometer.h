@@ -49,7 +49,7 @@ typedef struct Accelerometer {
   uSWIFT_return_code_t (*parse_waves)(sbd_message_type_55 *accel_msg,
                                       float *priority);
   uSWIFT_return_code_t (*next_spectra)(sbd_message_type_55 *accel_msg,
-                                       float *priority);
+                                       float *priority, float threshold);
   uSWIFT_return_code_t (*uart_init)(void);
   uSWIFT_return_code_t (*uart_deinit)(void);
   uSWIFT_return_code_t (*uart_reset)(void);

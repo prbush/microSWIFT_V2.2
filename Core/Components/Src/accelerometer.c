@@ -18,7 +18,7 @@ uSWIFT_return_code_t _accel_start_continuous(void);
 uSWIFT_return_code_t _accel_parse_waves(sbd_message_type_55 *accel_msg,
                                         float *priority);
 uSWIFT_return_code_t _accel_next_spectra(sbd_message_type_55 *accel_msg,
-                                         float *priority);
+                                         float *priority, float threshold);
 uSWIFT_return_code_t _accel_uart_init(void);
 uSWIFT_return_code_t _accel_uart_deinit(void);
 uSWIFT_return_code_t _accel_uart_reset(void);
@@ -125,13 +125,15 @@ uSWIFT_return_code_t _accel_parse_waves(sbd_message_type_55 *accel_msg,
 }
 
 uSWIFT_return_code_t _accel_next_spectra(sbd_message_type_55 *accel_msg,
-                                         float *priority) {
-  const char *next_spectra_command = "NS";
+                                         float *priority, float threshold) {
+  char next_spectra_command[6];
+  strcpy(next_spectra_command, "NS");
+  memcpy(&next_spectra_command[2], &threshold, sizeof(float));
 
   UINT ret;
-  ret = accel_self->uart_driver.write(
-      &accel_self->uart_driver, (uint8_t *)&(next_spectra_command[0]),
-      strlen(next_spectra_command), ACCEL_MAX_UART_TX_TICKS);
+  ret = accel_self->uart_driver.write(&accel_self->uart_driver,
+                                      (uint8_t *)&(next_spectra_command[0]), 6,
+                                      ACCEL_MAX_UART_TX_TICKS);
   if (UART_OK != ret) {
     return uSWIFT_IO_ERROR;
   }
@@ -139,9 +141,9 @@ uSWIFT_return_code_t _accel_next_spectra(sbd_message_type_55 *accel_msg,
   static int response_length = 6 + 340;
   char waves_response[response_length];
   memset(waves_response, 0, response_length);
-  // Blocking read for up to 1 minute so other background processing can finish.
-  // This only grabs spectra that are ready (and is typically called at the end
-  // of the duty cycle)
+  // Blocking read for up to 1 minute so other background processing can finish,
+  // since the accel board is currently single-threaded. This only grabs spectra
+  // that are ready (and is typically called at the end of the duty cycle)
   ret = accel_self->uart_driver.read(
       &accel_self->uart_driver, (uint8_t *)&(waves_response[0]),
       response_length, TX_TIMER_TICKS_PER_SECOND * 60);
