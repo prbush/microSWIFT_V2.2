@@ -13,7 +13,8 @@ Accelerometer *accel_self;
 // include them in .h file
 uSWIFT_return_code_t _accel_self_test(accel_self_test_result_t *result);
 uSWIFT_return_code_t _accel_set_time(uint32_t timestamp);
-uSWIFT_return_code_t _accel_start_sampling(void);
+uSWIFT_return_code_t _accel_run_once(void);
+uSWIFT_return_code_t _accel_start_continuous(void);
 uSWIFT_return_code_t _accel_parse_waves(sbd_message_type_55 *accel_msg,
                                         float *priority);
 uSWIFT_return_code_t _accel_uart_init(void);
@@ -28,7 +29,8 @@ void accelerometer_init(Accelerometer *accel, UART_HandleTypeDef *uart_handle,
 
   accel_self->self_test = _accel_self_test;
   accel_self->set_time = _accel_set_time;
-  accel_self->start_sampling = _accel_start_sampling;
+  accel_self->run_once = _accel_run_once;
+  accel_self->start_continuous = _accel_start_continuous;
   accel_self->parse_waves = _accel_parse_waves;
 
   accel_self->uart_init = _accel_uart_init;
@@ -66,12 +68,24 @@ uSWIFT_return_code_t _accel_set_time(uint32_t timestamp) {
   return uSWIFT_SUCCESS;
 }
 
-uSWIFT_return_code_t _accel_start_sampling(void) {
-  const char *start_sampling_command = "RW";
+uSWIFT_return_code_t _accel_run_once(void) {
+  const char *run_once_command = "RW";
   UINT ret;
   ret = accel_self->uart_driver.write(
-      &accel_self->uart_driver, (uint8_t *)&(start_sampling_command[0]),
-      strlen(start_sampling_command), ACCEL_MAX_UART_TX_TICKS);
+      &accel_self->uart_driver, (uint8_t *)&(run_once_command[0]),
+      strlen(run_once_command), ACCEL_MAX_UART_TX_TICKS);
+  if (UART_OK != ret) {
+    return uSWIFT_IO_ERROR;
+  }
+  return uSWIFT_SUCCESS;
+}
+
+uSWIFT_return_code_t _accel_start_continuous(void) {
+  const char *start_continuous_command = "MC";
+  UINT ret;
+  ret = accel_self->uart_driver.write(
+      &accel_self->uart_driver, (uint8_t *)&(start_continuous_command[0]),
+      strlen(start_continuous_command), ACCEL_MAX_UART_TX_TICKS);
   if (UART_OK != ret) {
     return uSWIFT_IO_ERROR;
   }
@@ -82,7 +96,7 @@ uSWIFT_return_code_t _accel_parse_waves(sbd_message_type_55 *accel_msg,
                                         float *priority) {
   // TODO: It'd probably be cleaner to add some sentinel bytes to the start of
   // the struct, rather than having transmit and receive sides doing this.
-  const char *start_sampling_command = "RW";
+  const char *run_once_command = "RW";
 
   static int response_length = 6 + 340;
   char waves_response[response_length];
@@ -94,7 +108,7 @@ uSWIFT_return_code_t _accel_parse_waves(sbd_message_type_55 *accel_msg,
   if (UART_OK != ret) {
     return uSWIFT_IO_ERROR;
   }
-  if (0 != strncmp(start_sampling_command, waves_response, 2)) {
+  if (0 != strncmp(run_once_command, waves_response, 2)) {
     // TODO: This should be robust to getting different messages; should wait
     // until it gets a response, and go with that one.
     // TODO(LEL): Create appropriate error for ACCEL_NO_DATA (separate from the

@@ -2226,7 +2226,11 @@ static void accel_thread_entry(ULONG thread_input) {
 
   // If we send a second UART command immediately, it won't be received.
   tx_thread_sleep(TX_TIMER_TICKS_PER_SECOND);
-  accel.start_sampling();
+  if (configuration.accelerometer_continuous_sampling) {
+    accel.start_continuous();
+  } else {
+    accel.run_once();
+  }
 
   LOG("Accelerometer sample window started.");
   sbd_message_type_55 accel_msg = {0};
