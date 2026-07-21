@@ -14,7 +14,8 @@ Accelerometer *accel_self;
 uSWIFT_return_code_t _accel_self_test(accel_self_test_result_t *result);
 uSWIFT_return_code_t _accel_set_time(uint32_t timestamp);
 uSWIFT_return_code_t _accel_start_sampling(void);
-uSWIFT_return_code_t _accel_parse_waves(sbd_message_type_55 *accel_msg);
+uSWIFT_return_code_t _accel_parse_waves(sbd_message_type_55 *accel_msg,
+                                        float *priority);
 uSWIFT_return_code_t _accel_uart_init(void);
 uSWIFT_return_code_t _accel_uart_deinit(void);
 uSWIFT_return_code_t _accel_uart_reset(void);
@@ -77,12 +78,13 @@ uSWIFT_return_code_t _accel_start_sampling(void) {
   return uSWIFT_SUCCESS;
 }
 
-uSWIFT_return_code_t _accel_parse_waves(sbd_message_type_55 *accel_msg) {
+uSWIFT_return_code_t _accel_parse_waves(sbd_message_type_55 *accel_msg,
+                                        float *priority) {
   // TODO: It'd probably be cleaner to add some sentinel bytes to the start of
   // the struct, rather than having transmit and receive sides doing this.
   const char *start_sampling_command = "RW";
 
-  static int response_length = 2 + 340;
+  static int response_length = 6 + 340;
   char waves_response[response_length];
   memset(waves_response, 0, response_length);
   // Blocking read for 19 minutes (at 3.9 Hz, 4096 samples is 17.5 minutes)
@@ -100,7 +102,8 @@ uSWIFT_return_code_t _accel_parse_waves(sbd_message_type_55 *accel_msg) {
     return uSWIFT_IO_ERROR;
   }
 
-  memcpy(accel_msg, &waves_response[2], sizeof(sbd_message_type_55));
+  memcpy(priority, &waves_response[2], sizeof(float));
+  memcpy(accel_msg, &waves_response[6], sizeof(sbd_message_type_55));
   return uSWIFT_SUCCESS;
 }
 

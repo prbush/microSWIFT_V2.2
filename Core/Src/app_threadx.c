@@ -2228,12 +2228,13 @@ static void accel_thread_entry(ULONG thread_input) {
 
   LOG("Accelerometer sample window started.");
   sbd_message_type_55 accel_msg = {0};
+  float priority;
 
   // TODO: Set timeout for overall thread:
   //   e.g.   iridium.start_timer(iridium_thread_timeout);
 
   // Read bytes; package up and add to iridium queue.
-  ret = accel.parse_waves(&accel_msg);
+  ret = accel.parse_waves(&accel_msg, &priority);
   if (uSWIFT_SUCCESS != ret) {
     accel_error_out(&accel, ACCELEROMETER_SAMPLING_ERROR, this_thread,
                     "Acceleration-based waves returned with error code: %d",
@@ -2260,7 +2261,7 @@ static void accel_thread_entry(ULONG thread_input) {
   memcpy(&accel_msg.latitude, &msg_lat, sizeof(float));
   memcpy(&accel_msg.longitude, &msg_lon, sizeof(float));
 
-  LOG("Received accelerometer message:");
+  LOG("Received accelerometer message w/ priority %0.6f:", priority);
   LOG("....time.: %ul", accel_msg.timestamp);
   LOG("....X min/mean/max: %0.4f / %0.4f / %0.4f",
       halfToFloat(accel_msg.min_x_accel), halfToFloat(accel_msg.mean_x_accel),
@@ -2273,9 +2274,7 @@ static void accel_thread_entry(ULONG thread_input) {
       halfToFloat(accel_msg.max_z_accel));
   LOG("Lat = %0.2f, Lon = %0.2f", accel_msg.latitude, accel_msg.longitude);
 
-  // TODO: Replace this with the sum-of-spectra that Jim requested
-  float accel_msg_priority = fabsf(halfToFloat(accel_msg.max_z_accel));
-  persistent_ram_save_message(ACCELEROMETER_TELEMETRY, accel_msg_priority,
+  persistent_ram_save_message(ACCELEROMETER_TELEMETRY, priority,
                               (uint8_t *)&accel_msg);
 
   // TODO: Add saving the data. I'm not yet sure whether we need a whole

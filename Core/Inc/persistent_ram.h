@@ -19,7 +19,7 @@
 // @formatter:off
 typedef struct {
   sbd_message_type_52 payload;
-  bool valid;
+  float priority;
 } Iridium_Message_Storage_Element_t;
 
 typedef struct {
@@ -34,7 +34,13 @@ typedef struct {
 
 typedef struct {
   sbd_message_type_55 payload;
-  bool valid;
+  // We're treating this as a priority queue; I'd rather calculate priority
+  // once, rather than re-calculating each time we need to insert something
+  // into the queue.
+  //
+  // Sum of X/Y/Z spectra amplitudes across all frequencies
+  // -FLT_MAX if message has already been sent or has not been populated.
+  float priority;
 } Accelerometer_Message_Storage_Element_t;
 
 // NB: We do not change memory allocation based on which sensors are enabled,
@@ -101,7 +107,7 @@ typedef struct {
   Waves_Message_Storage waves_storage;
   Turbidity_Message_Storage turbidity_storage;
   Light_Message_Storage light_storage;
-  Accelerometer_Message_Storage accelerometer_storage;
+  Accelerometer_Message_Storage accel_storage;
   microSWIFT_configuration device_config;
   microSWIFT_firmware_version_t version;
 } Persistent_Storage;

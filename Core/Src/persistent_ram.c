@@ -12,6 +12,7 @@
 #include "string.h"
 #include "time.h"
 #include <ext_rtc_server.h>
+#include <limits.h>
 
 // Save the struct in SRAM2 -- NOLOAD section which will be retained in standby
 // mode
@@ -57,6 +58,17 @@ void persistent_ram_init(const microSWIFT_configuration *config,
   // Otherwise increment it
   else {
     persistent_self.sample_window_counter++;
+  }
+
+  // Initialize the priority queues.
+  // * Previously the "valid" flag had been set to False by the clearing
+  //   function setting all memory to 0.
+  // * Light and Turbidity have a plain queue, no prioritization.
+  for (int ii = 0; ii < MAX_NUM_ACCELEROMETER_MSGS_STORED; ii++) {
+    persistent_self.accel_storage.msg_queue[ii].priority = -1;
+  }
+  for (int ii = 0; ii < MAX_NUM_WAVES_MSGS_STORED; ii++) {
+    persistent_self.waves_storage.msg_queue[ii].priority = -1;
   }
 }
 
@@ -229,8 +241,8 @@ uint32_t persistent_ram_get_num_msgs_enqueued(telemetry_type_t msg_type) {
 
   case ACCELEROMETER_TELEMETRY:
     LOG("Number of enqueued Accelerometer messages: %lu",
-        persistent_self.accelerometer_storage.num_telemetry_msgs_enqueued);
-    return persistent_self.accelerometer_storage.num_telemetry_msgs_enqueued;
+        persistent_self.accel_storage.num_telemetry_msgs_enqueued);
+    return persistent_self.accel_storage.num_telemetry_msgs_enqueued;
     break;
 
   default:
@@ -255,166 +267,156 @@ void persistent_ram_save_message(telemetry_type_t msg_type, float msg_priority,
     _persistent_ram_clear();
   }
 
+  // Minimum priority in the queue
+  float min_priority = FLT_MAX;
+  // Index of minimum priority; where data will be inserted
+  int min_priority_idx = -1;
+
   switch (msg_type) {
+
   case WAVES_TELEMETRY:
-    // If the storage queue is full, see if we can replace an element
-    if (persistent_self.waves_storage.num_telemetry_msgs_enqueued ==
-        MAX_NUM_WAVES_MSGS_STORED) {
-      for (i = 0; i < MAX_NUM_WAVES_MSGS_STORED; i++) {
-        // Want to make sure we are comparing absolute values, though wave
-        // height should always be positive
-        if ((fabsf(halfToFloat(
-                persistent_self.waves_storage.msg_queue[i].payload.Hs))) <
-            fabsf(halfToFloat(((sbd_message_type_52 *)msg)->Hs))) {
-          // copy the message over
-          memcpy(&(persistent_self.waves_storage.msg_queue[i].payload), msg,
-                 sizeof(sbd_message_type_52));
-          // Make the entry valid (should already be, but just in case)
-          persistent_self.waves_storage.msg_queue[i].valid = true;
-          return;
-        }
-      }
-    } else {
-      // Not full, just need to find an open slot
-      for (i = 0; i < MAX_NUM_WAVES_MSGS_STORED; i++) {
-        if (!persistent_self.waves_storage.msg_queue[i].valid) {
-          // copy the message over
-          memcpy(&(persistent_self.waves_storage.msg_queue[i].payload), msg,
-                 sizeof(sbd_message_type_52));
-          // Make the entry valid
-          persistent_self.waves_storage.msg_queue[i].valid = true;
-          persistent_self.waves_storage.num_telemetry_msgs_enqueued++;
-          return;
+    for (int ii = 0; ii < MAX_NUM_WAVES_MSGS_STORED; ii++) {
+      if (persistent_self.waves_storage.msg_queue[ii].priority < min_priority) {
+        min_priority = persistent_self.waves_storage.msg_queue[ii].priority;
+        min_priority_idx = ii;
+        if (min_priority < 0) {
+          // short-circuit search if we've found an empty slot
+          break;
         }
       }
     }
+    if (min_priority_idx >= 0 && msg_priority > min_priority) {
+      memcpy(
+          &(persistent_self.waves_storage.msg_queue[min_priority_idx].payload),
+          msg, sizeof(sbd_message_type_52));
+      persistent_self.waves_storage.msg_queue[min_priority_idx].priority =
+          msg_priority;
 
-    break;
+      // If NOT replacing a valid message, increment num enqueued
+      if (min_priority < 0) {
+        persistent_self.waves_storage.num_telemetry_msgs_enqueued++;
+      }
+    }
+    break; // case WAVES_TELEMETRY
 
   case ACCELEROMETER_TELEMETRY:
-    // If the storage queue is full, see if we can replace an element
-    if (persistent_self.accelerometer_storage.num_telemetry_msgs_enqueued ==
-        MAX_NUM_ACCELEROMETER_MSGS_STORED) {
-      for (i = 0; i < MAX_NUM_ACCELEROMETER_MSGS_STORED; i++) {
-        // TODO: Ask Jim what metric to use here since we do not calculate
-        //       wave heights for accelerometer data.
-        // NOTE: The previous logic simply replaces the first message with
-        //       smaller wave heights; instead, it might make sense to
-        //       replace the absolute smallest element.
-        if ((fabsf(
-                halfToFloat(persistent_self.accelerometer_storage.msg_queue[i]
-                                .payload.max_z_accel))) <
-            fabsf(halfToFloat(((sbd_message_type_55 *)msg)->max_z_accel))) {
-          // copy the message over
-          memcpy(&(persistent_self.accelerometer_storage.msg_queue[i].payload),
-                 msg, sizeof(sbd_message_type_55));
-          // Make the entry valid (should already be, but just in case)
-          persistent_self.accelerometer_storage.msg_queue[i].valid = true;
-          return;
+
+    // Find minimum value and index in queue
+    for (int ii = 0; ii < MAX_NUM_ACCELEROMETER_MSGS_STORED; ii++) {
+      if (persistent_self.accel_storage.msg_queue[ii].priority < min_priority) {
+        min_priority = persistent_self.accel_storage.msg_queue[ii].priority;
+        min_priority_idx = ii;
+        if (min_priority < 0) {
+          // short-circuit search if we've found an empty slot
+          break;
         }
       }
-      // Do we want to log that we're discarding a message due to full queue?
-    } else {
-      // Not full, just need to find an open slot
-      for (i = 0; i < MAX_NUM_ACCELEROMETER_MSGS_STORED; i++) {
-        if (!persistent_self.accelerometer_storage.msg_queue[i].valid) {
-          // copy the message over
-          memcpy(&(persistent_self.accelerometer_storage.msg_queue[i].payload),
-                 msg, sizeof(sbd_message_type_55));
-          // Make the entry valid
-          persistent_self.accelerometer_storage.msg_queue[i].valid = true;
-          persistent_self.accelerometer_storage.num_telemetry_msgs_enqueued++;
-          return;
-        }
-      }
-      // Getting here would indicate an error -- should we log that?
     }
 
-    break;
+    if (min_priority_idx >= 0 && msg_priority > min_priority) {
+      // copy the message over
+      memcpy(
+          &(persistent_self.accel_storage.msg_queue[min_priority_idx].payload),
+          msg, sizeof(sbd_message_type_55));
+      persistent_self.accel_storage.msg_queue[min_priority_idx].priority =
+          msg_priority;
+      LOG("Queued msg with priority %0.6f and position %d", msg_priority,
+          min_priority_idx);
+      // need to increment message count IF we're not replacing an existing one
+      if (min_priority < 0) {
+        persistent_self.accel_storage.num_telemetry_msgs_enqueued++;
+      }
+    } else {
+      LOG("Cannot enqueue accel msg with priority %0.6f; min priority in queue "
+          "= %0.6f",
+          msg_priority, min_priority);
+    }
+    break; // case ACCELEROMETER_TELEMETRY
 
   case TURBIDITY_TELEMETRY:
     // If the storage queue is full, then just skip
-    if (!(persistent_self.turbidity_storage.num_msg_elements_enqueued ==
-          MAX_NUM_TURBIDITY_MSGS_STORED)) {
-      // First check if there is room in the current message index
-      for (i = 0; i < TURBIDITY_MSGS_PER_SBD; i++) {
-        if (!persistent_self.turbidity_storage
-                 .msg_queue[persistent_self.turbidity_storage.current_msg_index]
-                 .valid[i]) {
-          // copy the message over
-          memcpy(&(persistent_self.turbidity_storage
-                       .msg_queue[persistent_self.turbidity_storage
-                                      .current_msg_index]
-                       .payload.elements[i]),
-                 msg, sizeof(sbd_message_type_53_element));
-          // Make the entry valid
-          persistent_self.turbidity_storage
-              .msg_queue[persistent_self.turbidity_storage.current_msg_index]
-              .valid[i] = true;
-          persistent_self.turbidity_storage.num_msg_elements_enqueued++;
-          return;
-        }
-      }
-
-      // Need to start a new message
-      for (i = 0; i < MAX_NUM_NON_WAVES_MSGS_STORED; i++) {
-        if (!persistent_self.turbidity_storage.msg_queue[i].valid[0]) {
-          // copy the message over
-          memcpy(&(persistent_self.turbidity_storage.msg_queue[i]
-                       .payload.elements[0]),
-                 msg, sizeof(sbd_message_type_53_element));
-          // Make the entry valid
-          persistent_self.turbidity_storage.msg_queue[i].valid[0] = true;
-          persistent_self.turbidity_storage.num_msg_elements_enqueued++;
-          persistent_self.turbidity_storage.current_msg_index = i;
-          return;
-        }
+    if ((persistent_self.turbidity_storage.num_msg_elements_enqueued ==
+         MAX_NUM_TURBIDITY_MSGS_STORED)) {
+      return;
+    }
+    // First check if there is room in the current message index
+    for (int ii = 0; ii < TURBIDITY_MSGS_PER_SBD; ii++) {
+      if (!persistent_self.turbidity_storage
+               .msg_queue[persistent_self.turbidity_storage.current_msg_index]
+               .valid[ii]) {
+        // copy the message over
+        memcpy(&(persistent_self.turbidity_storage
+                     .msg_queue[persistent_self.turbidity_storage
+                                    .current_msg_index]
+                     .payload.elements[ii]),
+               msg, sizeof(sbd_message_type_53_element));
+        // Make the entry valid
+        persistent_self.turbidity_storage
+            .msg_queue[persistent_self.turbidity_storage.current_msg_index]
+            .valid[ii] = true;
+        persistent_self.turbidity_storage.num_msg_elements_enqueued++;
+        return;
       }
     }
 
-    break;
+    // Need to start a new message
+    for (int ii = 0; ii < MAX_NUM_NON_WAVES_MSGS_STORED; ii++) {
+      if (!persistent_self.turbidity_storage.msg_queue[ii].valid[0]) {
+        // copy the message over
+        memcpy(&(persistent_self.turbidity_storage.msg_queue[ii]
+                     .payload.elements[0]),
+               msg, sizeof(sbd_message_type_53_element));
+        // Make the entry valid
+        persistent_self.turbidity_storage.msg_queue[ii].valid[0] = true;
+        persistent_self.turbidity_storage.num_msg_elements_enqueued++;
+        persistent_self.turbidity_storage.current_msg_index = ii;
+        return;
+      }
+    }
+
+    break; // case TURBIDITY_TELEMETRY
 
   case LIGHT_TELEMETRY:
     // If the storage queue is full, then just skip
-    if (!(persistent_self.light_storage.num_msg_elements_enqueued ==
-          MAX_NUM_LIGHT_MSGS_STORED)) {
-      // First check if there is room in the current message index
-      for (i = 0; i < LIGHT_MSGS_PER_SBD; i++) {
-        if (!persistent_self.light_storage
-                 .msg_queue[persistent_self.light_storage.current_msg_index]
-                 .valid[i]) {
-          // copy the message over
-          memcpy(
-              &(persistent_self.light_storage
-                    .msg_queue[persistent_self.light_storage.current_msg_index]
-                    .payload.elements[i]),
-              msg, sizeof(sbd_message_type_54_element));
-          // Make the entry valid
-          persistent_self.light_storage
-              .msg_queue[persistent_self.light_storage.current_msg_index]
-              .valid[i] = true;
-          persistent_self.light_storage.num_msg_elements_enqueued++;
-          return;
-        }
-      }
-
-      // Need to start a new message
-      for (i = 0; i < MAX_NUM_NON_WAVES_MSGS_STORED; i++) {
-        if (!persistent_self.light_storage.msg_queue[i].valid[0]) {
-          // copy the message over
-          memcpy(
-              &(persistent_self.light_storage.msg_queue[i].payload.elements[0]),
-              msg, sizeof(sbd_message_type_54_element));
-          // Make the entry valid
-          persistent_self.light_storage.msg_queue[i].valid[0] = true;
-          persistent_self.light_storage.num_msg_elements_enqueued++;
-          persistent_self.light_storage.current_msg_index = i;
-          return;
-        }
+    if ((persistent_self.light_storage.num_msg_elements_enqueued ==
+         MAX_NUM_LIGHT_MSGS_STORED)) {
+      return;
+    }
+    // First check if there is room in the current message index
+    for (int ii = 0; ii < LIGHT_MSGS_PER_SBD; ii++) {
+      if (!persistent_self.light_storage
+               .msg_queue[persistent_self.light_storage.current_msg_index]
+               .valid[ii]) {
+        // copy the message over
+        memcpy(&(persistent_self.light_storage
+                     .msg_queue[persistent_self.light_storage.current_msg_index]
+                     .payload.elements[ii]),
+               msg, sizeof(sbd_message_type_54_element));
+        // Make the entry valid
+        persistent_self.light_storage
+            .msg_queue[persistent_self.light_storage.current_msg_index]
+            .valid[ii] = true;
+        persistent_self.light_storage.num_msg_elements_enqueued++;
+        return;
       }
     }
 
-    break;
+    // Need to start a new message
+    for (int ii = 0; ii < MAX_NUM_NON_WAVES_MSGS_STORED; ii++) {
+      if (!persistent_self.light_storage.msg_queue[ii].valid[0]) {
+        // copy the message over
+        memcpy(
+            &(persistent_self.light_storage.msg_queue[ii].payload.elements[0]),
+            msg, sizeof(sbd_message_type_54_element));
+        // Make the entry valid
+        persistent_self.light_storage.msg_queue[ii].valid[0] = true;
+        persistent_self.light_storage.num_msg_elements_enqueued++;
+        persistent_self.light_storage.current_msg_index = ii;
+        return;
+      }
+    }
+
+    break; // case LIGHT_TELEMETRY
 
   default:
     return;
@@ -431,15 +433,9 @@ void persistent_ram_save_message(telemetry_type_t msg_type, float msg_priority,
  */
 uint8_t *
 persistent_ram_get_prioritized_unsent_message(telemetry_type_t msg_type) {
-  // Set to float min value to ensure any message significant wave height will
-  // be greater than or equal to
-  float most_significant_wave_height = -FLT_MAX;
-  float msg_wave_height = 0.0;
-  real16_T msg_wave_half_float = {0};
-  float max_z_accel = -FLT_MAX;
-  float msg_z_accel = 0.0;
-  real16_T msg_accel_half_float = {0};
-  int32_t pri_msg_index = 0, valid_msg_index = -1;
+  float max_priority = -FLT_MAX;
+  int max_priority_idx = -1;
+
   bool msg_full = false;
   uint8_t *ret_ptr = NULL;
 
@@ -457,85 +453,49 @@ persistent_ram_get_prioritized_unsent_message(telemetry_type_t msg_type) {
       return NULL;
     }
 
-    // Find the largest significant wave height
-    for (int i = 0; i < MAX_NUM_WAVES_MSGS_STORED; i++) {
-      if (persistent_self.waves_storage.msg_queue[i].valid) {
-        valid_msg_index = i;
-        msg_wave_half_float =
-            persistent_self.waves_storage.msg_queue[i].payload.Hs;
-        msg_wave_height = fabsf(halfToFloat(msg_wave_half_float));
-
-        if (msg_wave_height >= most_significant_wave_height) {
-          most_significant_wave_height = msg_wave_height;
-          pri_msg_index = i;
-        }
+    // Find the highest priority message
+    for (int ii = 0; ii < MAX_NUM_WAVES_MSGS_STORED; ii++) {
+      if (persistent_self.waves_storage.msg_queue[ii].priority > max_priority) {
+        max_priority = persistent_self.waves_storage.msg_queue[ii].priority;
+        max_priority_idx = ii;
       }
     }
 
-    // Make sure we don't go out of bounds. Take the priority message first,
-    // otherwise, any valid message
-    if ((pri_msg_index >= 0) &&
-        (pri_msg_index <= (MAX_NUM_WAVES_MSGS_STORED - 1))) {
+    if (0 <= max_priority_idx && max_priority_idx < MAX_NUM_WAVES_MSGS_STORED) {
       ret_ptr =
-          (uint8_t *)&persistent_self.waves_storage.msg_queue[pri_msg_index]
-              .payload;
-    } else if ((valid_msg_index >= 0) &&
-               (valid_msg_index <= (MAX_NUM_WAVES_MSGS_STORED - 1))) {
-      ret_ptr =
-          (uint8_t *)&persistent_self.waves_storage.msg_queue[valid_msg_index]
+          (uint8_t *)&persistent_self.waves_storage.msg_queue[max_priority_idx]
               .payload;
     } else {
       ret_ptr = NULL;
     }
+    break; // case WAVES_TELEMETRY
 
-    break;
-
-  // This is a clone of the WAVES_TELEMETRY logic
   case ACCELEROMETER_TELEMETRY:
 
     // Empty queue check
-    if (persistent_self.accelerometer_storage.num_telemetry_msgs_enqueued ==
-        0) {
+    if (persistent_self.accel_storage.num_telemetry_msgs_enqueued == 0) {
       return NULL;
     }
 
-    // Find the maximum acceleration in Z.
-    // TODO: Update this prioritization.
-    for (int i = 0; i < MAX_NUM_ACCELEROMETER_MSGS_STORED; i++) {
-      if (persistent_self.accelerometer_storage.msg_queue[i].valid) {
-        valid_msg_index = i;
-        msg_accel_half_float =
-            persistent_self.accelerometer_storage.msg_queue[i]
-                .payload.max_z_accel;
-        msg_z_accel = fabsf(halfToFloat(msg_accel_half_float));
-
-        if (msg_z_accel >= max_z_accel) {
-          max_z_accel = msg_z_accel;
-          pri_msg_index = i;
-        }
+    for (int ii = 0; ii < MAX_NUM_ACCELEROMETER_MSGS_STORED; ii++) {
+      if (persistent_self.accel_storage.msg_queue[ii].priority > max_priority) {
+        max_priority = persistent_self.accel_storage.msg_queue[ii].priority;
+        max_priority_idx = ii;
       }
     }
 
-    // Make sure we don't go out of bounds. Take the priority message first,
-    // otherwise, any valid message
-    if ((pri_msg_index >= 0) &&
-        (pri_msg_index <= (MAX_NUM_ACCELEROMETER_MSGS_STORED - 1))) {
-      ret_ptr = (uint8_t *)&persistent_self.accelerometer_storage
-                    .msg_queue[pri_msg_index]
-                    .payload;
-    } else if ((valid_msg_index >= 0) &&
-               (valid_msg_index <= (MAX_NUM_ACCELEROMETER_MSGS_STORED - 1))) {
-      ret_ptr = (uint8_t *)&persistent_self.accelerometer_storage
-                    .msg_queue[valid_msg_index]
-                    .payload;
+    if (max_priority_idx >= 0 &&
+        max_priority_idx < MAX_NUM_ACCELEROMETER_MSGS_STORED) {
+      ret_ptr =
+          (uint8_t *)&persistent_self.accel_storage.msg_queue[max_priority_idx]
+              .payload;
     } else {
       ret_ptr = NULL;
     }
 
-    break;
+    break; // case ACCELEROMETER_TELEMETRY
 
   case TURBIDITY_TELEMETRY:
-
     // Make sure we have enough elements to constitute a full msg
     if (persistent_self.turbidity_storage.num_msg_elements_enqueued <
         TURBIDITY_MSGS_PER_SBD) {
@@ -543,41 +503,34 @@ persistent_ram_get_prioritized_unsent_message(telemetry_type_t msg_type) {
     }
 
     // Just take the first available
-    for (int i = 0; i < MAX_NUM_NON_WAVES_MSGS_STORED; i++) {
-
+    // NOTE(LEL): I think this effectively becomes a LIFO queue
+    for (int ii = 0; ii < MAX_NUM_NON_WAVES_MSGS_STORED; ii++) {
       msg_full = true;
-
-      for (int j = 0; j < TURBIDITY_MSGS_PER_SBD; j++) {
-        if (!persistent_self.turbidity_storage.msg_queue[i].valid[j]) {
+      for (int jj = 0; jj < TURBIDITY_MSGS_PER_SBD; jj++) {
+        if (!persistent_self.turbidity_storage.msg_queue[ii].valid[jj]) {
           msg_full = false;
           break;
         }
       }
-
       if (msg_full) {
         ret_ptr =
-            (uint8_t *)&persistent_self.turbidity_storage.msg_queue[i].payload;
+            (uint8_t *)&persistent_self.turbidity_storage.msg_queue[ii].payload;
         return ret_ptr;
       }
     }
-
-    break;
+    break; // case TURBIDITY_TELEMETRY
 
   case LIGHT_TELEMETRY:
-
     // Make sure we have enough elements to constitute a full msg
     if (persistent_self.light_storage.num_msg_elements_enqueued <
         LIGHT_MSGS_PER_SBD) {
       return NULL;
     }
-
     // Just take the first available
-    for (int i = 0; i < MAX_NUM_NON_WAVES_MSGS_STORED; i++) {
-
+    for (int ii = 0; ii < MAX_NUM_NON_WAVES_MSGS_STORED; ii++) {
       msg_full = true;
-
-      for (int j = 0; j < LIGHT_MSGS_PER_SBD; j++) {
-        if (!persistent_self.light_storage.msg_queue[i].valid[j]) {
+      for (int jj = 0; jj < LIGHT_MSGS_PER_SBD; jj++) {
+        if (!persistent_self.light_storage.msg_queue[ii].valid[jj]) {
           msg_full = false;
           break;
         }
@@ -585,12 +538,12 @@ persistent_ram_get_prioritized_unsent_message(telemetry_type_t msg_type) {
 
       if (msg_full) {
         ret_ptr =
-            (uint8_t *)&persistent_self.light_storage.msg_queue[i].payload;
+            (uint8_t *)&persistent_self.light_storage.msg_queue[ii].payload;
         return ret_ptr;
       }
     }
 
-    break;
+    break; // case LIGHT_TELEMETRY
 
   default:
     ret_ptr = NULL;
@@ -599,6 +552,9 @@ persistent_ram_get_prioritized_unsent_message(telemetry_type_t msg_type) {
   return ret_ptr;
 }
 
+// We don't pop from the queue because we only want to remove an element
+// after it has been transmitted successfully. So we have a {get, delete}
+// in place of the more traditional {peek, pop}.
 void persistent_ram_delete_message_element(telemetry_type_t msg_type,
                                            uint8_t *msg_ptr) {
   // Corruption, lack of initialization check
@@ -611,32 +567,32 @@ void persistent_ram_delete_message_element(telemetry_type_t msg_type,
   case WAVES_TELEMETRY:
 
     // Find the pointer
-    for (int i = 0; i < MAX_NUM_WAVES_MSGS_STORED; i++) {
-      if ((uint8_t *)&persistent_self.waves_storage.msg_queue[i].payload ==
+    for (int ii = 0; ii < MAX_NUM_WAVES_MSGS_STORED; ii++) {
+      if ((uint8_t *)&persistent_self.waves_storage.msg_queue[ii].payload ==
           msg_ptr) {
         // Zero out the message
         memset(msg_ptr, 0, sizeof(Iridium_Message_Storage_Element_t));
+        ((Iridium_Message_Storage_Element_t *)msg_ptr)->priority = -1;
         persistent_self.waves_storage.num_telemetry_msgs_enqueued--;
         break;
       }
     }
-
-    break;
+    break; // case WAVES_TELEMETRY
 
   case ACCELEROMETER_TELEMETRY:
 
     // Find the pointer
     for (int i = 0; i < MAX_NUM_ACCELEROMETER_MSGS_STORED; i++) {
-      if ((uint8_t *)&persistent_self.accelerometer_storage.msg_queue[i]
-              .payload == msg_ptr) {
+      if ((uint8_t *)&persistent_self.accel_storage.msg_queue[i].payload ==
+          msg_ptr) {
         // Zero out the message
         memset(msg_ptr, 0, sizeof(Accelerometer_Message_Storage_Element_t));
-        persistent_self.accelerometer_storage.num_telemetry_msgs_enqueued--;
+        ((Accelerometer_Message_Storage_Element_t *)msg_ptr)->priority = -1;
+        persistent_self.accel_storage.num_telemetry_msgs_enqueued--;
         break;
       }
     }
-
-    break;
+    break; // case ACCELEROMETER_TELEMETRY
 
   case TURBIDITY_TELEMETRY:
 
@@ -651,8 +607,7 @@ void persistent_ram_delete_message_element(telemetry_type_t msg_type,
         break;
       }
     }
-
-    break;
+    break; // case TURBIDITY_TELEMETRY
 
   case LIGHT_TELEMETRY:
 
@@ -667,8 +622,7 @@ void persistent_ram_delete_message_element(telemetry_type_t msg_type,
         break;
       }
     }
-
-    break;
+    break; // case LIGHT_TELEMETRY
 
   case OTA_ACK_MESSAGE:
     persistent_self.ota_acknowledgement_sent = true;
