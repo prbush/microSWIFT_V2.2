@@ -17,6 +17,8 @@ uSWIFT_return_code_t _accel_run_once(void);
 uSWIFT_return_code_t _accel_start_continuous(void);
 uSWIFT_return_code_t _accel_parse_waves(sbd_message_type_55 *accel_msg,
                                         float *priority);
+uSWIFT_return_code_t _accel_next_spectra(sbd_message_type_55 *accel_msg,
+                                         float *priority);
 uSWIFT_return_code_t _accel_uart_init(void);
 uSWIFT_return_code_t _accel_uart_deinit(void);
 uSWIFT_return_code_t _accel_uart_reset(void);
@@ -32,6 +34,7 @@ void accelerometer_init(Accelerometer *accel, UART_HandleTypeDef *uart_handle,
   accel_self->run_once = _accel_run_once;
   accel_self->start_continuous = _accel_start_continuous;
   accel_self->parse_waves = _accel_parse_waves;
+  accel_self->next_spectra = _accel_next_spectra;
 
   accel_self->uart_init = _accel_uart_init;
   accel_self->uart_deinit = _accel_uart_deinit;
@@ -121,6 +124,44 @@ uSWIFT_return_code_t _accel_parse_waves(sbd_message_type_55 *accel_msg,
   return uSWIFT_SUCCESS;
 }
 
+uSWIFT_return_code_t _accel_next_spectra(sbd_message_type_55 *accel_msg,
+                                         float *priority) {
+  const char *next_spectra_command = "NS";
+
+  UINT ret;
+  ret = accel_self->uart_driver.write(
+      &accel_self->uart_driver, (uint8_t *)&(next_spectra_command[0]),
+      strlen(next_spectra_command), ACCEL_MAX_UART_TX_TICKS);
+  if (UART_OK != ret) {
+    return uSWIFT_IO_ERROR;
+  }
+
+  static int response_length = 6 + 340;
+  char waves_response[response_length];
+  memset(waves_response, 0, response_length);
+  // Blocking read for up to 1 minute so other background processing can finish.
+  // This only grabs spectra that are already ready.
+  // TODO(LEL): Should this query happen AFTER GNSS sampling has finished,
+  // rather than before? Add another step in the controller thread?
+  ret = accel_self->uart_driver.read(
+      &accel_self->uart_driver, (uint8_t *)&(waves_response[0]),
+      response_length, TX_TIMER_TICKS_PER_SECOND * 60);
+  if (UART_OK != ret) {
+    return uSWIFT_IO_ERROR;
+  }
+  if (0 != strncmp(next_spectra_command, waves_response, 2)) {
+    // TODO: This should be robust to getting different messages; should wait
+    // until it gets a response, and go with that one.
+    // TODO(LEL): Create appropriate error for ACCEL_NO_DATA (separate from the
+    // initialization failure.)
+    return uSWIFT_IO_ERROR;
+  }
+
+  memcpy(priority, &waves_response[2], sizeof(float));
+  memcpy(accel_msg, &waves_response[6], sizeof(sbd_message_type_55));
+  return uSWIFT_SUCCESS;
+}
+
 uSWIFT_return_code_t _accel_self_test(accel_self_test_result_t *result) {
   int32_t ret;
 
@@ -134,7 +175,12 @@ uSWIFT_return_code_t _accel_self_test(accel_self_test_result_t *result) {
 
   // The slowest we'll run is 4Hz, so need to wait long enough for the next
   // sample to arrive. Half a second was too short.
-  uint32_t read_timeout = TX_TIMER_TICKS_PER_SECOND;
+  // And, now that we're supporting continuous mode, this needs to be long
+  // enough that if we call for a self test in the middle of writing to disk
+  // it'll have time to reply. (For now, the accelerometer is single-threaded;
+  //  we may need to split the spectra + filesystem operations into separate
+  // threads.)
+  uint32_t read_timeout = 3 * TX_TIMER_TICKS_PER_SECOND;
   static int response_length = 2 + sizeof(accel_self_test_result_t);
   char self_test_response[response_length];
   memset(self_test_response, 0, response_length);

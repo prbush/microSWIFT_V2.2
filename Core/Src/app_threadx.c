@@ -232,6 +232,10 @@ static void temperature_thread_entry(ULONG thread_input);
 static void light_thread_entry(ULONG thread_input);
 static void turbidity_thread_entry(ULONG thread_input);
 static void accel_thread_entry(ULONG thread_input);
+// Helper function for accel_thread.
+// I didn't move it into accelerometer.c because it depends on
+// functions in gnss.h, and I didn't want to add that dependencyb.
+static void save_accel_sbd(sbd_message_type_55 *accel_msg, float priority);
 
 // clang-format off
 /* USER CODE END PFP */
@@ -2200,7 +2204,9 @@ static void accel_thread_entry(ULONG thread_input) {
   tx_thread_sleep(10 * TX_TIMER_TICKS_PER_SECOND);
 
   ret = usart2_deinit();
-  accel.power_off();
+  if (!configuration.accelerometer_continuous_sampling) {
+    accel.power_off();
+  }
 
   // Suspend for now, will be woken up when GNSS has initialized
   tx_thread_suspend(this_thread);
@@ -2239,18 +2245,48 @@ static void accel_thread_entry(ULONG thread_input) {
   // TODO: Set timeout for overall thread:
   //   e.g.   iridium.start_timer(iridium_thread_timeout);
 
-  // Read bytes; package up and add to iridium queue.
-  ret = accel.parse_waves(&accel_msg, &priority);
-  if (uSWIFT_SUCCESS != ret) {
-    accel_error_out(&accel, ACCELEROMETER_SAMPLING_ERROR, this_thread,
-                    "Acceleration-based waves returned with error code: %d",
-                    (int)ret);
+  if (configuration.accelerometer_continuous_sampling) {
+
+    // TODO: For the continuous method, want to request data from accelerometer
+    // card until top N spots in queue are true max across both
+    // microcontrollers.
+    for (int ii = 0; ii < 3; ii++) {
+      ret = accel.next_spectra(&accel_msg, &priority);
+      if (uSWIFT_SUCCESS != ret) {
+        accel_error_out(&accel, ACCELEROMETER_SAMPLING_ERROR, this_thread,
+                        "Acceleration-based waves returned with error code: %d",
+                        (int)ret);
+      }
+      LOG("Received accel spectra #%d", ii);
+      save_accel_sbd(&accel_msg, priority);
+    }
+    accel.uart_deinit();
+
+  } else {
+    // Read bytes; package up and add to iridium queue.^M
+    ret = accel.parse_waves(&accel_msg, &priority);
+    if (uSWIFT_SUCCESS != ret) {
+      accel_error_out(&accel, ACCELEROMETER_SAMPLING_ERROR, this_thread,
+                      "Acceleration-based waves returned with error code: %d",
+                      (int)ret);
+    }
+
+    LOG("Accelerometer-based waves computations completed.");
+    accel.uart_deinit();
+    accel.power_off();
+
+    save_accel_sbd(&accel_msg, priority);
   }
 
-  LOG("Accelerometer-based waves computations completed.");
-  accel.uart_deinit();
-  accel.power_off();
+  tx_thread_sleep(LOGGER_MAX_TICKS_TO_TX_MSG);
 
+  (void)tx_event_flags_set(&complete_flags,
+                           ACCELEROMETER_THREAD_COMPLETED_SUCCESSFULLY, TX_OR);
+  tx_thread_terminate(this_thread);
+}
+
+// Populate message with lat/lon, and add to persistent RAM
+void save_accel_sbd(sbd_message_type_55 *accel_msg, float priority) {
   char ascii_7 = '7';
   uint8_t accel_type = 55;
   int32_t lat = 0;
@@ -2262,38 +2298,26 @@ static void accel_thread_entry(ULONG thread_input) {
   msg_lat = (float)lat / LAT_LON_CONVERSION_FACTOR;
   msg_lon = (float)lon / LAT_LON_CONVERSION_FACTOR;
 
-  memcpy(&accel_msg.legacy_number_7, &ascii_7, sizeof(uint8_t));
-  memcpy(&accel_msg.type, &accel_type, sizeof(uint8_t));
-  memcpy(&accel_msg.latitude, &msg_lat, sizeof(float));
-  memcpy(&accel_msg.longitude, &msg_lon, sizeof(float));
+  memcpy(&accel_msg->legacy_number_7, &ascii_7, sizeof(uint8_t));
+  memcpy(&accel_msg->type, &accel_type, sizeof(uint8_t));
+  memcpy(&accel_msg->latitude, &msg_lat, sizeof(float));
+  memcpy(&accel_msg->longitude, &msg_lon, sizeof(float));
 
   LOG("Received accelerometer message w/ priority %0.6f:", priority);
-  LOG("....time.: %ul", accel_msg.timestamp);
+  LOG("....time.: %ul", accel_msg->timestamp);
   LOG("....X min/mean/max: %0.4f / %0.4f / %0.4f",
-      halfToFloat(accel_msg.min_x_accel), halfToFloat(accel_msg.mean_x_accel),
-      halfToFloat(accel_msg.max_x_accel));
+      halfToFloat(accel_msg->min_x_accel), halfToFloat(accel_msg->mean_x_accel),
+      halfToFloat(accel_msg->max_x_accel));
   LOG("....Y min/mean/max: %0.4f / %0.4f / %0.4f",
-      halfToFloat(accel_msg.min_y_accel), halfToFloat(accel_msg.mean_y_accel),
-      halfToFloat(accel_msg.max_y_accel));
+      halfToFloat(accel_msg->min_y_accel), halfToFloat(accel_msg->mean_y_accel),
+      halfToFloat(accel_msg->max_y_accel));
   LOG("....Z min/mean/max: %0.4f / %0.4f / %0.4f",
-      halfToFloat(accel_msg.min_z_accel), halfToFloat(accel_msg.mean_z_accel),
-      halfToFloat(accel_msg.max_z_accel));
-  LOG("Lat = %0.2f, Lon = %0.2f", accel_msg.latitude, accel_msg.longitude);
+      halfToFloat(accel_msg->min_z_accel), halfToFloat(accel_msg->mean_z_accel),
+      halfToFloat(accel_msg->max_z_accel));
+  LOG("Lat = %0.2f, Lon = %0.2f", accel_msg->latitude, accel_msg->longitude);
 
   persistent_ram_save_message(ACCELEROMETER_TELEMETRY, priority,
-                              (uint8_t *)&accel_msg);
-
-  // TODO: Add saving the data. I'm not yet sure whether we need a whole
-  //       struct to hold the accelerometer-related variables ...
-  //    Of course, this woudldn't be true raw data, just the chunk
-  //    that is sent
-  // (void)file_system_server_save_accelerometer_raw(&accel);
-
-  tx_thread_sleep(LOGGER_MAX_TICKS_TO_TX_MSG);
-
-  (void)tx_event_flags_set(&complete_flags,
-                           ACCELEROMETER_THREAD_COMPLETED_SUCCESSFULLY, TX_OR);
-  tx_thread_terminate(this_thread);
+                              (uint8_t *)accel_msg);
 }
 // clang-format off
 /* USER CODE END 1 */
