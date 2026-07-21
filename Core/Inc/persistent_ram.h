@@ -122,7 +122,8 @@ void persistent_ram_set_rtc_time_set(void);
 bool persistent_ram_get_rtc_time_set(void);
 uint32_t persistent_ram_get_reset_reason(void);
 uint32_t persistent_ram_get_num_msgs_enqueued(telemetry_type_t msg_type);
-void persistent_ram_save_message(telemetry_type_t msg_type, uint8_t *msg);
+void persistent_ram_save_message(telemetry_type_t msg_type, float msg_priority,
+                                 uint8_t *msg);
 uint8_t *
 persistent_ram_get_prioritized_unsent_message(telemetry_type_t msg_type);
 void persistent_ram_delete_message_element(telemetry_type_t msg_type,

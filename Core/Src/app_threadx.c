@@ -1672,7 +1672,9 @@ static void light_thread_entry(ULONG thread_input) {
   light.off();
 
   light.assemble_telemetry_message_element(&sbd_msg_element);
-  persistent_ram_save_message(LIGHT_TELEMETRY, (uint8_t *)&sbd_msg_element);
+  float light_msg_priority = 1;
+  persistent_ram_save_message(LIGHT_TELEMETRY, light_msg_priority,
+                              (uint8_t *)&sbd_msg_element);
 
   watchdog_check_in(LIGHT_THREAD);
 
@@ -1786,7 +1788,9 @@ static void turbidity_thread_entry(ULONG thread_input) {
   obs.off();
 
   obs.assemble_telemetry_message_element(&sbd_msg_element);
-  persistent_ram_save_message(TURBIDITY_TELEMETRY, (uint8_t *)&sbd_msg_element);
+  float obs_msg_priority = 1;
+  persistent_ram_save_message(TURBIDITY_TELEMETRY, obs_msg_priority,
+                              (uint8_t *)&sbd_msg_element);
 
   watchdog_check_in(TURBIDITY_THREAD);
 
@@ -2014,7 +2018,10 @@ static void iridium_thread_entry(ULONG thread_input) {
     // Need to save the message
     error_bits = get_current_flags(&error_flags);
     error_bits |= IRIDIUM_INIT_ERROR;
-    persistent_ram_save_message(WAVES_TELEMETRY, (uint8_t *)&sbd_message);
+    float waves_msg_priority =
+        fabsf(halfToFloat(((sbd_message_type_52 *)msg_ptr)->Hs));
+    persistent_ram_save_message(WAVES_TELEMETRY, waves_msg_priority,
+                                (uint8_t *)&sbd_message);
     iridium_error_out(&iridium, IRIDIUM_UART_COMMS_ERROR, this_thread,
                       "Iridium modem UART communication error.");
   }
@@ -2119,7 +2126,9 @@ static void iridium_thread_entry(ULONG thread_input) {
     error_bits = control_get_accumulated_error_flags();
     memcpy(&sbd_message.error_bits, &error_bits, sizeof(uint32_t));
     // Save the message
-    persistent_ram_save_message(WAVES_TELEMETRY, msg_ptr);
+    float waves_msg_priority =
+        fabsf(halfToFloat(((sbd_message_type_52 *)msg_ptr)->Hs));
+    persistent_ram_save_message(WAVES_TELEMETRY, waves_msg_priority, msg_ptr);
 
     tx_thread_sleep(10);
   }
@@ -2264,7 +2273,10 @@ static void accel_thread_entry(ULONG thread_input) {
       halfToFloat(accel_msg.max_z_accel));
   LOG("Lat = %0.2f, Lon = %0.2f", accel_msg.latitude, accel_msg.longitude);
 
-  persistent_ram_save_message(ACCELEROMETER_TELEMETRY, (uint8_t *)&accel_msg);
+  // TODO: Replace this with the sum-of-spectra that Jim requested
+  float accel_msg_priority = fabsf(halfToFloat(accel_msg.max_z_accel));
+  persistent_ram_save_message(ACCELEROMETER_TELEMETRY, accel_msg_priority,
+                              (uint8_t *)&accel_msg);
 
   // TODO: Add saving the data. I'm not yet sure whether we need a whole
   //       struct to hold the accelerometer-related variables ...

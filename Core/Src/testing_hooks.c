@@ -92,15 +92,16 @@ bool test_iridium_queueing(void *iridium_ptr) {
 
   // Make a bunch of type 52 messages, half with error values, half with an
   // increasing significant wave height
+  float priority = 1;
   for (int i = 0; i < 10; i++) {
     Hs.bitPattern = (i % 2 == 0) ? TELEMETRY_FIELD_ERROR_CODE : 0x4248 + i;
     memcpy(&sbd_message.Hs, &Hs, sizeof(real16_T));
 
-    persistent_ram_save_message(WAVES_TELEMETRY, (uint8_t *)&sbd_message);
+    persistent_ram_save_message(WAVES_TELEMETRY, priority,
+                                (uint8_t *)&sbd_message);
   }
 
   memcpy(&(msg_buffer[0]), &sbd_message, sizeof(sbd_message_type_52));
-
   for (int i = 0; i < 10 * LIGHT_MSGS_PER_SBD; i++) {
     memset(&light_message.start_lat, i + 1, sizeof(uint8_t));
     memset(&light_message.start_lon, i + 1, sizeof(uint8_t));
@@ -121,7 +122,8 @@ bool test_iridium_queueing(void *iridium_ptr) {
     memset(&light_message.avg_f8, i + 1, sizeof(uint8_t));
     memset(&light_message.avg_dark, i + 1, sizeof(uint8_t));
     memset(&light_message.avg_nir, i + 1, sizeof(uint8_t));
-    persistent_ram_save_message(LIGHT_TELEMETRY, (uint8_t *)&light_message);
+    persistent_ram_save_message(LIGHT_TELEMETRY, priority,
+                                (uint8_t *)&light_message);
   }
 
   watchdog_check_in(IRIDIUM_THREAD);
