@@ -35,6 +35,10 @@ typedef struct __attribute__((packed)) microSWIFT_configuration {
   bool light_enabled;
   bool turbidity_enabled;
   bool accelerometer_enabled;
+  // Default for accelerometer is "polled" mode, running one sample
+  // per duty cycle. However, it also supports a "continuous" mode,
+  // where it buffers data and will report the most significant events.
+  bool accelerometer_continuous_sampling;
 
   const char compile_date[11];
   const char compile_time[9];

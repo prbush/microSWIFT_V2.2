@@ -684,8 +684,6 @@ UINT App_ThreadX_Init(VOID *memory_ptr)
   device_handles.expansion_uart_rx_dma_handle = &handle_GPDMA1_Channel2;
 
   persistent_ram_get_device_config(&configuration);
-  // TODO: Revert this once I've added it to the configuration!
-  // configuration.accelerometer_enabled = true;
 
   // clang-format off
   /* USER CODE END App_ThreadX_MEM_POOL */
@@ -2159,8 +2157,12 @@ static void accel_thread_entry(ULONG thread_input) {
   // https://github.com/SASlabgroup/microSWIFT_V2.2_Firmware/issues/1
   // LOG("accel_thread_entry");
   // Calling it after a sleep is fine
-  // tx_thread_sleep(100);
-  // LOG("accel_thread_entry");
+  tx_thread_sleep(100);
+  if (configuration.accelerometer_continuous_sampling) {
+    LOG("accel_thread_entry: running in continuous mode");
+  } else {
+    LOG("accel_thread_entry: running in polled mode");
+  }
 
   Accelerometer accel = {0};
   accelerometer_init(&accel, device_handles.expansion_uart_handle,
