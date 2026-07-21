@@ -454,6 +454,26 @@ static void _control_manage_state(void) {
   (void)tx_event_flags_get(controller_self->complete_flags, ALL_EVENT_FLAGS,
                            TX_OR_CLEAR, &current_flags, TX_NO_WAIT);
 
+  // If we're running in continuous mode AND GNSS errored out,
+  // we may need to wake up the accelerometer thread once more in order
+  // to query the accel board for spectra.
+  if (controller_self->thread_status.gnss_complete &&
+      !controller_self->thread_status.accelerometer_complete) {
+
+    UINT thread_state;
+    UINT status =
+        tx_thread_info_get(controller_self->thread_handles->accel_thread, NULL,
+                           &thread_state, NULL, NULL, NULL, NULL, NULL, NULL);
+
+    if (status == TX_SUCCESS) {
+      // Thread information successfully retrieved
+      if (TX_SUSPENDED == thread_state) {
+        LOG("...accel thread_state was TX_SUSPENDED; resuming");
+        tx_thread_resume(controller_self->thread_handles->accel_thread);
+      }
+    }
+  }
+
   // Exit early case
   if (current_flags == 0) {
     return;
@@ -540,6 +560,14 @@ static void _control_manage_state(void) {
       ret |=
           tx_thread_resume(controller_self->thread_handles->temperature_thread);
     }
+    // If we're running the accelerometer in continuous mode, need to
+    // wake that thread back up so it can query the accel board for the
+    // highest priority messages.
+    if (controller_self->global_config->accelerometer_continuous_sampling &&
+        !controller_self->thread_status.accelerometer_complete) {
+      LOG("GNSS two minutes from completion: resuming accel_thread");
+      ret |= tx_thread_resume(controller_self->thread_handles->accel_thread);
+    }
   }
 
   // When the GNSS thread is complete, we can run the Waves algo
@@ -570,6 +598,9 @@ static void _control_manage_state(void) {
     // operationally, should we also start the light thread so we get
     // that data as well? (I guess normally you wouldn't because it's not worth
     // using 18 mins of battery just for light data?)
+    //
+    // NB: This works for polled mode, but the continuous mode needs an
+    //     additional resume to request data after sampling.
     if (!controller_self->thread_status.accelerometer_complete) {
       LOG("No GNSS fix; resuming accelerometer thread anyways");
       ret |= tx_thread_resume(controller_self->thread_handles->accel_thread);

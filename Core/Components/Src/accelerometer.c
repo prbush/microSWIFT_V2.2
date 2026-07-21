@@ -140,9 +140,8 @@ uSWIFT_return_code_t _accel_next_spectra(sbd_message_type_55 *accel_msg,
   char waves_response[response_length];
   memset(waves_response, 0, response_length);
   // Blocking read for up to 1 minute so other background processing can finish.
-  // This only grabs spectra that are already ready.
-  // TODO(LEL): Should this query happen AFTER GNSS sampling has finished,
-  // rather than before? Add another step in the controller thread?
+  // This only grabs spectra that are ready (and is typically called at the end
+  // of the duty cycle)
   ret = accel_self->uart_driver.read(
       &accel_self->uart_driver, (uint8_t *)&(waves_response[0]),
       response_length, TX_TIMER_TICKS_PER_SECOND * 60);

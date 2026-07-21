@@ -10,6 +10,7 @@
 #include "microSWIFT_return_codes.h"
 #include "sbd.h"
 #include "tx_api.h"
+#include <stdint.h>
 
 #define ACCEL_MAX_UART_TX_TICKS (TX_TIMER_TICKS_PER_SECOND)
 

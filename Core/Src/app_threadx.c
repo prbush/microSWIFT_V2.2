@@ -2213,7 +2213,7 @@ static void accel_thread_entry(ULONG thread_input) {
 
   tx_thread_sleep(TX_TIMER_TICKS_PER_SECOND / 10);
 
-  LOG("Resuming accelerometer thread");
+  LOG("Resuming accelerometer thread (after self test)");
   accel.power_on();
   ret = usart2_init();
   if (UART_OK != ret) {
@@ -2234,11 +2234,12 @@ static void accel_thread_entry(ULONG thread_input) {
   tx_thread_sleep(TX_TIMER_TICKS_PER_SECOND);
   if (configuration.accelerometer_continuous_sampling) {
     accel.start_continuous();
+    LOG("Accelerometer sample window started in continuous mode.");
   } else {
     accel.run_once();
+    LOG("Accelerometer sample window started in single sample mode.");
   }
 
-  LOG("Accelerometer sample window started.");
   sbd_message_type_55 accel_msg = {0};
   float priority;
 
@@ -2246,6 +2247,15 @@ static void accel_thread_entry(ULONG thread_input) {
   //   e.g.   iridium.start_timer(iridium_thread_timeout);
 
   if (configuration.accelerometer_continuous_sampling) {
+    // Suspend for now, will be woken up 2 minutes before end of GNSS period
+    tx_thread_suspend(this_thread);
+
+    // If the GNSS thread has completed with errors, may have been woken back
+    // up almost instantly after suspending. Give the Accelerometer board
+    // time to at least start a sampling period, though it'll only finish if
+    // the rate is fast and we're collecting few samples.
+    tx_thread_sleep(5 * TX_TIMER_TICKS_PER_SECOND);
+    LOG("Accelerometer thread resumed in order to query spectra.");
 
     // TODO: For the continuous method, want to request data from accelerometer
     // card until top N spots in queue are true max across both
@@ -2257,8 +2267,12 @@ static void accel_thread_entry(ULONG thread_input) {
                         "Acceleration-based waves returned with error code: %d",
                         (int)ret);
       }
-      LOG("Received accel spectra #%d", ii);
-      save_accel_sbd(&accel_msg, priority);
+      LOG("Received accel spectra #%d with priority %0.6f", ii, priority);
+      if (priority < 0) {
+        LOG("Returned priority < 0; no spectra available from accel board.");
+      } else {
+        save_accel_sbd(&accel_msg, priority);
+      }
     }
     accel.uart_deinit();
 
@@ -2270,11 +2284,9 @@ static void accel_thread_entry(ULONG thread_input) {
                       "Acceleration-based waves returned with error code: %d",
                       (int)ret);
     }
-
     LOG("Accelerometer-based waves computations completed.");
     accel.uart_deinit();
     accel.power_off();
-
     save_accel_sbd(&accel_msg, priority);
   }
 
