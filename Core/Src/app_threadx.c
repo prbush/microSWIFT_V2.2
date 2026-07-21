@@ -2290,6 +2290,11 @@ static void accel_thread_entry(ULONG thread_input) {
         LOG("Returned priority < 0; no spectra available from accel board.");
         break;
       } else {
+        if (priority < threshold_priority) {
+          LOG("Error in prioritization! Received spectra with valid priority "
+              "(%0.6f) but less than requested threshold (%0.6f)! ",
+              priority, threshold_priority);
+        }
         save_accel_sbd(&accel_msg, priority);
       }
     }
@@ -2335,17 +2340,20 @@ void save_accel_sbd(sbd_message_type_55 *accel_msg, float priority) {
   memcpy(&accel_msg->longitude, &msg_lon, sizeof(float));
 
   LOG("Received accelerometer message w/ priority %0.6f:", priority);
-  LOG("....time.: %ul", accel_msg->timestamp);
-  LOG("....X min/mean/max: %0.4f / %0.4f / %0.4f",
-      halfToFloat(accel_msg->min_x_accel), halfToFloat(accel_msg->mean_x_accel),
-      halfToFloat(accel_msg->max_x_accel));
-  LOG("....Y min/mean/max: %0.4f / %0.4f / %0.4f",
-      halfToFloat(accel_msg->min_y_accel), halfToFloat(accel_msg->mean_y_accel),
-      halfToFloat(accel_msg->max_y_accel));
-  LOG("....Z min/mean/max: %0.4f / %0.4f / %0.4f",
-      halfToFloat(accel_msg->min_z_accel), halfToFloat(accel_msg->mean_z_accel),
-      halfToFloat(accel_msg->max_z_accel));
-  LOG("Lat = %0.2f, Lon = %0.2f", accel_msg->latitude, accel_msg->longitude);
+  // LOG("....time.: %ul", accel_msg->timestamp);
+  // LOG("....X min/mean/max: %0.4f / %0.4f / %0.4f",
+  //     halfToFloat(accel_msg->min_x_accel),
+  //     halfToFloat(accel_msg->mean_x_accel),
+  //     halfToFloat(accel_msg->max_x_accel));
+  // LOG("....Y min/mean/max: %0.4f / %0.4f / %0.4f",
+  //     halfToFloat(accel_msg->min_y_accel),
+  //     halfToFloat(accel_msg->mean_y_accel),
+  //     halfToFloat(accel_msg->max_y_accel));
+  // LOG("....Z min/mean/max: %0.4f / %0.4f / %0.4f",
+  //     halfToFloat(accel_msg->min_z_accel),
+  //     halfToFloat(accel_msg->mean_z_accel),
+  //     halfToFloat(accel_msg->max_z_accel));
+  // LOG("Lat = %0.2f, Lon = %0.2f", accel_msg->latitude, accel_msg->longitude);
 
   persistent_ram_save_message(ACCELEROMETER_TELEMETRY, priority,
                               (uint8_t *)accel_msg);

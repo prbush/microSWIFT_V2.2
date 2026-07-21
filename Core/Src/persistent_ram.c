@@ -300,6 +300,9 @@ void persistent_ram_save_message(telemetry_type_t msg_type, float msg_priority,
       }
     }
 
+    LOG("Found minimum accel priority of %0.6f at position %d in queue\r\n",
+        min_priority, min_priority_idx);
+
     if (min_priority_idx >= 0 && msg_priority > min_priority) {
       // copy the message over
       memcpy(
@@ -312,6 +315,9 @@ void persistent_ram_save_message(telemetry_type_t msg_type, float msg_priority,
       // need to increment message count IF we're not replacing an existing one
       if (min_priority < 0) {
         persistent_self.accel_storage.num_telemetry_msgs_enqueued++;
+        LOG("Filling empty slot; increment num accel msgs enqueued");
+      } else {
+        LOG("Replacing existing message; don't increment accel msgs enqueued");
       }
     } else {
       LOG("Cannot enqueue accel msg with priority %0.6f; min priority in queue "
@@ -577,6 +583,8 @@ void persistent_ram_delete_message_element(telemetry_type_t msg_type,
         ((Accelerometer_Message_Storage_Element_t *)msg_ptr)->priority = -1;
         persistent_self.accel_storage.num_telemetry_msgs_enqueued--;
         break;
+      } else {
+        LOG("Unable to remove Accel message!");
       }
     }
     break; // case ACCELEROMETER_TELEMETRY
