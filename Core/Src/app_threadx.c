@@ -2185,13 +2185,6 @@ static void accel_thread_entry(ULONG thread_input) {
     (void)tx_event_flags_set(&initialization_flags, ACCELEROMETER_INIT_SUCCESS,
                              TX_OR);
   }
-  // We can't set the time until GNSS time has initialized.
-  // TODO: Once I finish testing the implementation, move this to the
-  //   start of the sampling window and uncomment get_system_time()
-  // uint32_t timestamp = (uint32_t)get_system_time();
-  uint32_t timestamp = 1777829511;
-  accel.set_time(timestamp);
-  LOG("Attempted to set time to %lu", timestamp);
 
   tx_thread_sleep(10 * TX_TIMER_TICKS_PER_SECOND);
 
@@ -2211,12 +2204,17 @@ static void accel_thread_entry(ULONG thread_input) {
                     "Accel UART port failed to initialize");
   }
 
-  // TODO: Initialize time on accel board / confirm UART comms
-
   tx_thread_sleep(TX_TIMER_TICKS_PER_SECOND); // Time for board to wake back up.
 
+  // We can't set the time until GNSS time has initialized, so this needs
+  // to be after resuming the thread.
   // This timestamp is used for filling in fields of the SBD55 messages
-  timestamp = (uint32_t)get_system_time();
+  uint32_t timestamp = (uint32_t)get_system_time();
+  accel.set_time(timestamp);
+  LOG("Attempted to set accelerometer time to %lu (system time)", timestamp);
+
+  // If we send a second UART command immediately, it won't be received.
+  tx_thread_sleep(TX_TIMER_TICKS_PER_SECOND);
   accel.start_sampling();
 
   LOG("Accelerometer sample window started.");
@@ -2250,11 +2248,11 @@ static void accel_thread_entry(ULONG thread_input) {
 
   memcpy(&accel_msg.legacy_number_7, &ascii_7, sizeof(uint8_t));
   memcpy(&accel_msg.type, &accel_type, sizeof(uint8_t));
-  memcpy(&accel_msg.timestamp, &timestamp, sizeof(uint32_t));
   memcpy(&accel_msg.latitude, &msg_lat, sizeof(float));
   memcpy(&accel_msg.longitude, &msg_lon, sizeof(float));
 
   LOG("Received accelerometer message:");
+  LOG("....time.: %ul", accel_msg.timestamp);
   LOG("....X min/mean/max: %0.4f / %0.4f / %0.4f",
       halfToFloat(accel_msg.min_x_accel), halfToFloat(accel_msg.mean_x_accel),
       halfToFloat(accel_msg.max_x_accel));
