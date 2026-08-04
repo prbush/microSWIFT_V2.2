@@ -715,7 +715,7 @@ static void __reset_uart(void) {
 static int32_t __uart_read_dma(void *driver_ptr, uint8_t *read_buf,
                                uint16_t size, uint32_t timeout_ticks) {
   generic_uart_driver *driver_handle = (generic_uart_driver *)driver_ptr;
-  LOG("__uart_read_dma requesting %u bytes", size);
+  // LOG("__uart_read_dma requesting %u bytes", size);
 
   HAL_StatusTypeDef rx_result;
   if (iridium_self->receive_to_idle) {
@@ -743,7 +743,7 @@ static int32_t __uart_read_dma(void *driver_ptr, uint8_t *read_buf,
     goto uart_error;
   }
 
-  LOG("...uart_read_dma finished successfully. %s", read_buf);
+  // LOG("...uart_read_dma finished successfully. %s", read_buf);
 
   return UART_OK;
 
@@ -757,7 +757,7 @@ static int32_t __uart_write_dma(void *driver_ptr, uint8_t *write_buf,
                                 uint16_t size, uint32_t timeout_ticks) {
   generic_uart_driver *driver_handle = (generic_uart_driver *)driver_ptr;
 
-  LOG("__uart_write_dma sending %u bytes: %s", size, write_buf);
+  // LOG("__uart_write_dma sending %u bytes: %s", size, write_buf);
   if (HAL_UART_Transmit_DMA(driver_handle->uart_handle, write_buf, size) !=
       HAL_OK) {
     goto uart_error;
@@ -767,13 +767,13 @@ static int32_t __uart_write_dma(void *driver_ptr, uint8_t *write_buf,
     goto uart_error;
   }
 
-  LOG("...uart_write_dma sent successfully");
+  // LOG("...uart_write_dma sent successfully");
   return UART_OK;
 
 uart_error:
   HAL_UART_DMAStop(driver_handle->uart_handle);
   HAL_UART_Abort(driver_handle->uart_handle);
-  LOG("...uart_write_dma failed.");
+  // LOG("...uart_write_dma failed.");
 
   return UART_ERR;
 }

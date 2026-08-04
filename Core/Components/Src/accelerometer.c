@@ -13,8 +13,12 @@ Accelerometer *accel_self;
 // include them in .h file
 uSWIFT_return_code_t _accel_self_test(accel_self_test_result_t *result);
 uSWIFT_return_code_t _accel_set_time(uint32_t timestamp);
-uSWIFT_return_code_t _accel_start_sampling(void);
-uSWIFT_return_code_t _accel_parse_waves(sbd_message_type_55 *accel_msg);
+uSWIFT_return_code_t _accel_run_once(void);
+uSWIFT_return_code_t _accel_start_continuous(void);
+uSWIFT_return_code_t _accel_parse_waves(sbd_message_type_55 *accel_msg,
+                                        float *priority);
+uSWIFT_return_code_t _accel_next_spectra(sbd_message_type_55 *accel_msg,
+                                         float *priority, float threshold);
 uSWIFT_return_code_t _accel_uart_init(void);
 uSWIFT_return_code_t _accel_uart_deinit(void);
 uSWIFT_return_code_t _accel_uart_reset(void);
@@ -27,8 +31,10 @@ void accelerometer_init(Accelerometer *accel, UART_HandleTypeDef *uart_handle,
 
   accel_self->self_test = _accel_self_test;
   accel_self->set_time = _accel_set_time;
-  accel_self->start_sampling = _accel_start_sampling;
+  accel_self->run_once = _accel_run_once;
+  accel_self->start_continuous = _accel_start_continuous;
   accel_self->parse_waves = _accel_parse_waves;
+  accel_self->next_spectra = _accel_next_spectra;
 
   accel_self->uart_init = _accel_uart_init;
   accel_self->uart_deinit = _accel_uart_deinit;
@@ -65,24 +71,37 @@ uSWIFT_return_code_t _accel_set_time(uint32_t timestamp) {
   return uSWIFT_SUCCESS;
 }
 
-uSWIFT_return_code_t _accel_start_sampling(void) {
-  const char *start_sampling_command = "RW";
+uSWIFT_return_code_t _accel_run_once(void) {
+  const char *run_once_command = "RW";
   UINT ret;
   ret = accel_self->uart_driver.write(
-      &accel_self->uart_driver, (uint8_t *)&(start_sampling_command[0]),
-      strlen(start_sampling_command), ACCEL_MAX_UART_TX_TICKS);
+      &accel_self->uart_driver, (uint8_t *)&(run_once_command[0]),
+      strlen(run_once_command), ACCEL_MAX_UART_TX_TICKS);
   if (UART_OK != ret) {
     return uSWIFT_IO_ERROR;
   }
   return uSWIFT_SUCCESS;
 }
 
-uSWIFT_return_code_t _accel_parse_waves(sbd_message_type_55 *accel_msg) {
+uSWIFT_return_code_t _accel_start_continuous(void) {
+  const char *start_continuous_command = "MC";
+  UINT ret;
+  ret = accel_self->uart_driver.write(
+      &accel_self->uart_driver, (uint8_t *)&(start_continuous_command[0]),
+      strlen(start_continuous_command), ACCEL_MAX_UART_TX_TICKS);
+  if (UART_OK != ret) {
+    return uSWIFT_IO_ERROR;
+  }
+  return uSWIFT_SUCCESS;
+}
+
+uSWIFT_return_code_t _accel_parse_waves(sbd_message_type_55 *accel_msg,
+                                        float *priority) {
   // TODO: It'd probably be cleaner to add some sentinel bytes to the start of
   // the struct, rather than having transmit and receive sides doing this.
-  const char *start_sampling_command = "RW";
+  const char *run_once_command = "RW";
 
-  static int response_length = 2 + 340;
+  static int response_length = 6 + 340;
   char waves_response[response_length];
   memset(waves_response, 0, response_length);
   // Blocking read for 19 minutes (at 3.9 Hz, 4096 samples is 17.5 minutes)
@@ -92,7 +111,7 @@ uSWIFT_return_code_t _accel_parse_waves(sbd_message_type_55 *accel_msg) {
   if (UART_OK != ret) {
     return uSWIFT_IO_ERROR;
   }
-  if (0 != strncmp(start_sampling_command, waves_response, 2)) {
+  if (0 != strncmp(run_once_command, waves_response, 2)) {
     // TODO: This should be robust to getting different messages; should wait
     // until it gets a response, and go with that one.
     // TODO(LEL): Create appropriate error for ACCEL_NO_DATA (separate from the
@@ -100,7 +119,47 @@ uSWIFT_return_code_t _accel_parse_waves(sbd_message_type_55 *accel_msg) {
     return uSWIFT_IO_ERROR;
   }
 
-  memcpy(accel_msg, &waves_response[2], sizeof(sbd_message_type_55));
+  memcpy(priority, &waves_response[2], sizeof(float));
+  memcpy(accel_msg, &waves_response[6], sizeof(sbd_message_type_55));
+  return uSWIFT_SUCCESS;
+}
+
+uSWIFT_return_code_t _accel_next_spectra(sbd_message_type_55 *accel_msg,
+                                         float *priority, float threshold) {
+  char next_spectra_command[6];
+  strcpy(next_spectra_command, "NS");
+  memcpy(&next_spectra_command[2], &threshold, sizeof(float));
+
+  UINT ret;
+  ret = accel_self->uart_driver.write(&accel_self->uart_driver,
+                                      (uint8_t *)&(next_spectra_command[0]), 6,
+                                      ACCEL_MAX_UART_TX_TICKS);
+  if (UART_OK != ret) {
+    return uSWIFT_IO_ERROR;
+  }
+
+  static int response_length = 6 + 340;
+  char waves_response[response_length];
+  memset(waves_response, 0, response_length);
+  // Blocking read for up to 1 minute so other background processing can finish,
+  // since the accel board is currently single-threaded. This only grabs spectra
+  // that are ready (and is typically called at the end of the duty cycle)
+  ret = accel_self->uart_driver.read(
+      &accel_self->uart_driver, (uint8_t *)&(waves_response[0]),
+      response_length, TX_TIMER_TICKS_PER_SECOND * 60);
+  if (UART_OK != ret) {
+    return uSWIFT_IO_ERROR;
+  }
+  if (0 != strncmp(next_spectra_command, waves_response, 2)) {
+    // TODO: This should be robust to getting different messages; should wait
+    // until it gets a response, and go with that one.
+    // TODO(LEL): Create appropriate error for ACCEL_NO_DATA (separate from the
+    // initialization failure.)
+    return uSWIFT_IO_ERROR;
+  }
+
+  memcpy(priority, &waves_response[2], sizeof(float));
+  memcpy(accel_msg, &waves_response[6], sizeof(sbd_message_type_55));
   return uSWIFT_SUCCESS;
 }
 
@@ -117,7 +176,12 @@ uSWIFT_return_code_t _accel_self_test(accel_self_test_result_t *result) {
 
   // The slowest we'll run is 4Hz, so need to wait long enough for the next
   // sample to arrive. Half a second was too short.
-  uint32_t read_timeout = TX_TIMER_TICKS_PER_SECOND;
+  // And, now that we're supporting continuous mode, this needs to be long
+  // enough that if we call for a self test in the middle of writing to disk
+  // it'll have time to reply. (For now, the accelerometer is single-threaded;
+  //  we may need to split the spectra + filesystem operations into separate
+  // threads.)
+  uint32_t read_timeout = 3 * TX_TIMER_TICKS_PER_SECOND;
   static int response_length = 2 + sizeof(accel_self_test_result_t);
   char self_test_response[response_length];
   memset(self_test_response, 0, response_length);
