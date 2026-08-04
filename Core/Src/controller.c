@@ -735,8 +735,10 @@ static void _control_monitor_and_handle_errors(void) {
 }
 
 static void __get_alarm_settings(rtc_alarm_struct *alarm) {
-  struct tm boot_time = {0}, time_now = {0};
-  time_t boot_timestamp = 0, now_timestamp = 0;
+  struct tm boot_time = {0};
+  struct tm time_now = {0};
+  time_t boot_timestamp = 0;
+  time_t now_timestamp = 0;
 
   alarm->day_alarm_en = false;
   alarm->hour_alarm_en = true;
