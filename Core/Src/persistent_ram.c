@@ -59,17 +59,6 @@ void persistent_ram_init(const microSWIFT_configuration *config,
   else {
     persistent_self.sample_window_counter++;
   }
-
-  // Initialize the priority queues.
-  // * Previously the "valid" flag had been set to False by the clearing
-  //   function setting all memory to 0.
-  // * Light and Turbidity have a plain queue, no prioritization.
-  for (int ii = 0; ii < MAX_NUM_ACCELEROMETER_MSGS_STORED; ii++) {
-    persistent_self.accel_storage.msg_queue[ii].priority = -1;
-  }
-  for (int ii = 0; ii < MAX_NUM_WAVES_MSGS_STORED; ii++) {
-    persistent_self.waves_storage.msg_queue[ii].priority = -1;
-  }
 }
 
 /**
@@ -642,4 +631,14 @@ VOID persistent_ram_get_accel_priorities(float *priorities) {
 static void _persistent_ram_clear(void) {
   // Clear everything out
   memset(&persistent_self, 0, sizeof(Persistent_Storage));
+  // Initialize the priority queues.
+  // * Previously the "valid" flag had been set to False by the clearing
+  //   function setting all memory to 0.
+  // * Light and Turbidity have a plain queue, no prioritization.
+  for (int ii = 0; ii < MAX_NUM_ACCELEROMETER_MSGS_STORED; ii++) {
+    persistent_self.accel_storage.msg_queue[ii].priority = -1;
+  }
+  for (int ii = 0; ii < MAX_NUM_WAVES_MSGS_STORED; ii++) {
+    persistent_self.waves_storage.msg_queue[ii].priority = -1;
+  }
 }
