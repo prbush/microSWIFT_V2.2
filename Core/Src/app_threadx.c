@@ -238,6 +238,7 @@ static void accel_thread_entry(ULONG thread_input);
 // functions in gnss.h, and I didn't want to add that dependencyb.
 static void save_accel_sbd(sbd_message_type_55 *accel_msg, float priority);
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
+void sort_top_n(float *priorities, int array_len, int num);
 
 // clang-format off
 /* USER CODE END PFP */

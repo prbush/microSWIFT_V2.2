@@ -147,6 +147,8 @@ uint8_t *
 persistent_ram_get_prioritized_unsent_message(telemetry_type_t msg_type);
 void persistent_ram_delete_message_element(telemetry_type_t msg_type,
                                            uint8_t *msg_ptr);
+void persistent_ram_get_accel_priorities(float *priorities);
+
 // @formatter:on
 
 #endif /* INC_PERSISTENT_RAM_H_ */
