@@ -583,8 +583,6 @@ void persistent_ram_delete_message_element(telemetry_type_t msg_type,
         ((Accelerometer_Message_Storage_Element_t *)msg_ptr)->priority = -1;
         persistent_self.accel_storage.num_telemetry_msgs_enqueued--;
         break;
-      } else {
-        LOG("Unable to remove Accel message!");
       }
     }
     break; // case ACCELEROMETER_TELEMETRY
